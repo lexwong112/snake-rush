@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Game screens are fullscreen and draw everything themselves. -->
+    <style name="Theme.SnakeRush" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/board_bg</item>
+        <item name="android:statusBarColor">@color/board_bg</item>
+        <item name="android:navigationBarColor">@color/board_bg</item>
+    </style>
+</resources>

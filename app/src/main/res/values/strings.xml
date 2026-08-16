@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Snake Rush</string>
+    <string name="score_label">Score: %1$d</string>
+    <string name="best_label">Best: %1$d</string>
+</resources>

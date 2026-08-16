@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Stylized snake icon: a green zig-zag body with a dark head block
+    and a red food dot. Drawn inside the adaptive-icon safe zone.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Snake body (zig-zag) -->
+    <path
+        android:pathData="M28,66 L28,78 L40,78 L40,66 L52,66 L52,78 L64,78 L64,66 L76,66 L76,72"
+        android:strokeColor="#81C784"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Snake head -->
+    <path
+        android:pathData="M76,72 L76,62"
+        android:strokeColor="#4CAF50"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+
+    <!-- Food dot -->
+    <path
+        android:pathData="M34,40 m-5,0 a5,5 0 1,1 10,0 a5,5 0 1,1 -10,0"
+        android:fillColor="#F44336" />
+</vector>
