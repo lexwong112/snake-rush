@@ -40,6 +40,9 @@ class MainActivity : Activity() {
     /** Difficulty the next round will use. */
     private var selectedDifficulty = Difficulty.NORMAL
 
+    /** Plays the game's SFX on engine / state events. */
+    private val soundPlayer by lazy { SoundPlayer(applicationContext) }
+
     private lateinit var menuOverlay: View
     private lateinit var pauseOverlay: View
     private lateinit var gameOverOverlay: View
@@ -79,8 +82,20 @@ class MainActivity : Activity() {
             bestScoreText.text = getString(R.string.best_label, bestScore)
         }
 
+        // Sound effects: engine events (eat / game over) plus state-driven
+        // start & pause cues. All routed through SoundPlayer.
+        gameView.onFoodEaten = { soundPlayer.play(SoundPlayer.Effect.EAT) }
+        gameView.onGameOver = { soundPlayer.play(SoundPlayer.Effect.GAME_OVER) }
+
         // Overlays follow the engine state machine.
-        gameView.onStateChanged = { state -> syncOverlays(state) }
+        gameView.onStateChanged = { state ->
+            syncOverlays(state)
+            when (state) {
+                GameState.PLAYING -> soundPlayer.play(SoundPlayer.Effect.START)
+                GameState.PAUSED -> soundPlayer.play(SoundPlayer.Effect.PAUSE)
+                else -> Unit
+            }
+        }
 
         // Seed the in-memory best from DataStore (keeps the HUD live). The menu
         // label is also refreshed so a late load lands while the menu is shown.
@@ -171,15 +186,18 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         gameView.startLoop()
+        soundPlayer.resumeAll()
     }
 
     override fun onPause() {
         gameView.stopLoop()
+        soundPlayer.pauseAll()
         super.onPause()
     }
 
     override fun onDestroy() {
         uiScope.cancel()
+        soundPlayer.release()
         super.onDestroy()
     }
 }

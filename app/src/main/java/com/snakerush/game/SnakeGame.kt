@@ -53,6 +53,18 @@ class SnakeGame(
     var gameOverReason: String? = null
         private set
 
+    /**
+     * Pure-logic event hooks. The UI layer (GameView/MainActivity) sets these
+     * to play sounds / start effects; the engine itself stays Android-free.
+     *
+     * Invoked with the cell of the food that was just eaten, before the next
+     * food spawns.
+     */
+    var onFoodEaten: ((GridPoint) -> Unit)? = null
+
+    /** Invoked once when the round ends (wall hit, self bite, board full). */
+    var onGameOver: ((reason: String) -> Unit)? = null
+
     private val random = Random.Default
 
     val head: GridPoint
@@ -141,6 +153,11 @@ class SnakeGame(
         snake.addFirst(newHead)
         if (willEat) {
             score += FOOD_POINTS
+            val eatenCell = food
+            // Fire the eat event before respawning so the UI can flash the
+            // exact cell that was consumed; on a full board the respawn below
+            // ends the round (its onGameOver fires after this).
+            onFoodEaten?.invoke(eatenCell)
             spawnFood()
         } else {
             snake.removeLast()
@@ -193,6 +210,7 @@ class SnakeGame(
     private fun gameOver(reason: String) {
         state = GameState.GAME_OVER
         gameOverReason = reason
+        onGameOver?.invoke(reason)
     }
 
     companion object {

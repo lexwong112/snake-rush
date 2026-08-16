@@ -179,4 +179,98 @@ class SnakeGameTest {
             assertTrue(game.tickIntervalMillis <= difficulty.baseTickMillis)
         }
     }
+
+    @Test
+    fun fillingTheEntireBoardIsAVictory() {
+        val game = SnakeGame(3, 3)
+        game.loadStateForTesting(
+            listOf(
+                GridPoint(1, 1), GridPoint(0, 1), GridPoint(0, 2), GridPoint(1, 2),
+                GridPoint(2, 2), GridPoint(2, 0), GridPoint(1, 0), GridPoint(0, 0),
+            ),
+            Direction.RIGHT
+        )
+        game.placeFoodAt(GridPoint(2, 1)) // the only free cell
+        val events = mutableListOf<String>()
+        game.onFoodEaten = { events.add("eat") }
+        game.onGameOver = { events.add("over") }
+
+        game.start()
+        game.update()
+
+        assertEquals(GameState.GAME_OVER, game.state)
+        assertEquals(SnakeGame.BOARD_FULL_MESSAGE, game.gameOverReason)
+        assertEquals(3 * 3, game.snake.size)
+        assertEquals(SnakeGame.FOOD_POINTS, game.score)
+        // Eat fires before the respawn-triggered game over.
+        assertEquals(listOf("eat", "over"), events)
+    }
+
+    @Test
+    fun directionBufferDropsOldestWhenFull() {
+        val game = SnakeGame()
+        // Body stretches up (not back) so a LEFT turn is safe to execute.
+        game.loadStateForTesting(
+            listOf(GridPoint(9, 12), GridPoint(9, 11), GridPoint(9, 10)),
+            Direction.RIGHT
+        )
+        game.start()
+        // 4 presses with a buffer cap of 3: the oldest (DOWN) is evicted.
+        game.setDirection(Direction.DOWN)
+        game.setDirection(Direction.LEFT)
+        game.setDirection(Direction.UP)
+        game.setDirection(Direction.RIGHT)
+
+        game.update()
+        assertEquals(Direction.LEFT, game.direction)
+        game.update()
+        assertEquals(Direction.UP, game.direction)
+        game.update()
+        assertEquals(Direction.RIGHT, game.direction)
+        assertEquals(GameState.PLAYING, game.state)
+        assertEquals(GridPoint(9, 11), game.head)
+    }
+
+    @Test
+    fun foodMaySpawnDirectlyBesideTheSnakeBody() {
+        val game = SnakeGame(10, 10)
+        game.loadStateForTesting(
+            listOf(GridPoint(5, 5), GridPoint(5, 6), GridPoint(6, 6), GridPoint(6, 5)),
+            Direction.RIGHT
+        )
+        // Cells hugging the head (left side) and the tail (above) are free:
+        // placeFoodAt must accept food adjacent to the body.
+        game.placeFoodAt(GridPoint(4, 5))
+        assertTrue(game.food !in game.snake)
+        game.placeFoodAt(GridPoint(6, 4))
+        assertTrue(game.food !in game.snake)
+
+        // And a food cell straight ahead is still eaten normally.
+        game.placeFoodAt(GridPoint(7, 5))
+        game.start()
+        game.update() // (6,5): the vacating tail cell
+        game.update() // (7,5): the food
+        assertEquals(GameState.PLAYING, game.state)
+        assertEquals(GridPoint(7, 5), game.head)
+        assertEquals(SnakeGame.FOOD_POINTS, game.score)
+    }
+
+    @Test
+    fun speedFloorClampsTickIntervalAtHighScores() {
+        val game = SnakeGame(60, 60)
+        game.loadStateForTesting(listOf(GridPoint(0, 30)), Direction.RIGHT)
+        game.start()
+        var clampedSeen = false
+        repeat(40) {
+            game.placeFoodAt(game.head.translated(Direction.RIGHT))
+            game.update()
+            if (game.tickIntervalMillis == game.difficulty.minTickMillis) clampedSeen = true
+        }
+        assertTrue("score never reached the clamp threshold", clampedSeen)
+        assertEquals(game.difficulty.minTickMillis, game.tickIntervalMillis)
+        assertTrue(
+            game.score * SnakeGame.SPEEDUP_PER_SCORE >=
+                SnakeGame.BASE_TICK_MILLIS - SnakeGame.MIN_TICK_MILLIS
+        )
+    }
 }
