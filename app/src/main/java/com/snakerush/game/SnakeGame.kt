@@ -15,6 +15,8 @@ import kotlin.random.Random
 class SnakeGame(
     val cols: Int = DEFAULT_COLS,
     val rows: Int = DEFAULT_ROWS,
+    /** Play-speed preset; controls the tick interval curve (default: [Difficulty.NORMAL]). */
+    val difficulty: Difficulty = Difficulty.NORMAL,
 ) {
 
     /** Snake cells, head first. Read-only from the outside. */
@@ -56,9 +58,13 @@ class SnakeGame(
     val head: GridPoint
         get() = snake.first()
 
-    /** Tick interval in ms. Speeds up (gets shorter) as the score grows. */
+    /**
+     * Tick interval in ms, derived from [difficulty]. Speeds up (gets shorter)
+     * as the score grows, floored at the difficulty's [Difficulty.minTickMillis].
+     */
     val tickIntervalMillis: Long
-        get() = (BASE_TICK_MILLIS - score * SPEEDUP_PER_SCORE).coerceAtLeast(MIN_TICK_MILLIS)
+        get() = (difficulty.baseTickMillis - score * difficulty.speedUpPerScore)
+            .coerceAtLeast(difficulty.minTickMillis)
 
     init {
         reset()
@@ -194,6 +200,8 @@ class SnakeGame(
         const val DEFAULT_ROWS = 24
         const val INITIAL_LENGTH = 3
         const val FOOD_POINTS = 10
+
+        /** Baseline tick curve for the default ([Difficulty.NORMAL]) difficulty. */
         const val BASE_TICK_MILLIS = 300L
         const val MIN_TICK_MILLIS = 90L
         const val SPEEDUP_PER_SCORE = 6L

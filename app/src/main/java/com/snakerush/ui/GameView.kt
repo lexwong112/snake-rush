@@ -9,6 +9,7 @@ import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import com.snakerush.R
+import com.snakerush.game.Difficulty
 import com.snakerush.game.Direction
 import com.snakerush.game.GameState
 import com.snakerush.game.GridPoint
@@ -20,11 +21,13 @@ import com.snakerush.game.TickAccumulator
 /**
  * Custom [View] that renders the current [SnakeGame] state and drives it.
  *
- * Phase 2: a [Choreographer]-driven loop redraws every frame and advances the
+ * Phase 3: a [Choreographer]-driven loop redraws every frame and advances the
  * engine at its fixed tick interval via a [TickAccumulator]. Input arrives
  * either as swipe gestures on this view or as D-pad presses routed through
- * [pressDirection]. The first input in MENU calls [SnakeGame.start]; a tap
- * toggles pause/resume.
+ * [pressDirection]; a tap toggles pause/resume. The activity keeps its menu /
+ * pause / game-over overlays in sync by listening to [onStateChanged] and
+ * drives round lifecycle through [startGame], [resumeGame], [newGame] and
+ * [restartGame].
  *
  * Note: [onDraw] only reads engine state — all mutations happen in the frame
  * callback [advance], never during drawing.
@@ -35,17 +38,22 @@ class GameView @JvmOverloads constructor(
     defStyleAttr: Int = 0,
 ) : View(context, attrs, defStyleAttr) {
 
-    /** The single game instance this view renders. */
-    val game: SnakeGame = SnakeGame()
+    /** The game instance this view renders. Replaced by [newGame]/[restartGame]. */
+    var game: SnakeGame = SnakeGame()
+        private set
 
     /** Invoked whenever the score changes (after the tick that scored). */
     var onScoreChanged: ((score: Int) -> Unit)? = null
+
+    /** Invoked whenever [game]'s state changes (MENU → PLAYING, → GAME_OVER, …). */
+    var onStateChanged: ((state: GameState) -> Unit)? = null
 
     private val tickAccumulator = TickAccumulator()
     private val swipeInterpreter = SwipeInterpreter()
     private var lastFrameNanos = 0L
     private var loopRunning = false
     private var lastNotifiedScore = 0
+    private var lastNotifiedState: GameState = game.state
 
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
@@ -65,12 +73,6 @@ class GameView @JvmOverloads constructor(
     private val headPaint = Paint().apply { color = HEAD_COLOR }
     private val bodyPaint = Paint().apply { color = BODY_COLOR }
     private val foodPaint = Paint().apply { color = FOOD_COLOR }
-    private val hintPaint = Paint().apply {
-        color = TEXT_COLOR
-        textSize = 30f
-        textAlign = Paint.Align.CENTER
-        isAntiAlias = true
-    }
 
     /** Size of one grid cell in px, derived in [onSizeChanged]. */
     private var cellSizePx = 0f
@@ -113,7 +115,9 @@ class GameView @JvmOverloads constructor(
     /**
      * Applies a direction press from either input source (swipe or D-pad).
      * The first press in MENU starts the game, and the press itself is queued.
-     * No-op in PAUSED / GAME_OVER.
+     * No-op in PAUSED / GAME_OVER. (With the menu overlay in front the Start
+     * button is the primary path, but this safety net keeps the game playable
+     * if a press ever reaches the view while it is in MENU.)
      */
     fun pressDirection(dir: Direction) {
         when (game.state) {
@@ -124,19 +128,54 @@ class GameView @JvmOverloads constructor(
             GameState.PLAYING -> game.setDirection(dir)
             else -> Unit
         }
+        syncState()
     }
 
     /**
-     * Tap action: toggles between PLAYING and PAUSED. In GAME_OVER a tap
-     * restarts back to MENU (full game-over overlay is Phase 3).
+     * Tap action: toggles between PLAYING and PAUSED. State transitions from
+     * MENU / GAME_OVER are driven by the overlay buttons instead, never here.
      */
     fun togglePause() {
         when (game.state) {
             GameState.PLAYING -> game.pause()
             GameState.PAUSED -> game.resume()
-            GameState.GAME_OVER -> game.reset()
-            GameState.MENU -> Unit
+            else -> Unit
         }
+        syncState()
+    }
+
+    /** Starts the game from the menu (menu overlay "Start" button). */
+    fun startGame() {
+        game.start()
+        syncState()
+    }
+
+    /** Resumes a paused game (pause overlay "Resume" button). */
+    fun resumeGame() {
+        game.resume()
+        syncState()
+    }
+
+    /**
+     * Replaces the engine with a fresh round on [difficulty] and returns to
+     * the menu without starting. Used by the difficulty selector and by the
+     * "Menu" buttons on the pause / game-over overlays.
+     */
+    fun newGame(difficulty: Difficulty = game.difficulty) {
+        game = SnakeGame(difficulty = difficulty)
+        tickAccumulator.reset()
+        lastFrameNanos = 0L
+        lastNotifiedScore = 0
+        lastNotifiedState = game.state
+        onStateChanged?.invoke(game.state)
+        onScoreChanged?.invoke(game.score)
+    }
+
+    /** Starts a fresh round immediately (overlay "Restart" buttons). */
+    fun restartGame(difficulty: Difficulty = game.difficulty) {
+        newGame(difficulty)
+        game.start()
+        syncState()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -189,6 +228,14 @@ class GameView @JvmOverloads constructor(
             lastNotifiedScore = game.score
             onScoreChanged?.invoke(game.score)
         }
+        syncState()
+    }
+
+    /** Fires [onStateChanged] once per actual state transition. */
+    private fun syncState() {
+        if (game.state == lastNotifiedState) return
+        lastNotifiedState = game.state
+        onStateChanged?.invoke(game.state)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -211,9 +258,6 @@ class GameView @JvmOverloads constructor(
         drawBoard(canvas)
         drawSnake(canvas)
         drawFood(canvas)
-        if (game.state == GameState.MENU) {
-            canvas.drawText("Swipe to start", width / 2f, height * 0.62f, hintPaint)
-        }
     }
 
     private fun drawBoard(canvas: Canvas) {
@@ -264,6 +308,5 @@ class GameView @JvmOverloads constructor(
         val HEAD_COLOR = 0xFF4CAF50.toInt()
         val BODY_COLOR = 0xFF81C784.toInt()
         val FOOD_COLOR = 0xFFF44336.toInt()
-        val TEXT_COLOR = 0xFFFFFFFF.toInt()
     }
 }

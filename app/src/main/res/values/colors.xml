@@ -8,6 +8,10 @@
     <color name="food">#F44336</color>
     <color name="text_primary">#FFFFFF</color>
     <color name="text_secondary">#9E9E9E</color>
+    <!-- Full-screen overlay backdrop (semi-transparent so the board stays
+         faintly visible behind the menu / pause / game-over screens). -->
+    <color name="overlay_bg">#E60F1B24</color>
+    <color name="accent">#FFC107</color>
     <!-- Launcher icon background -->
     <color name="ic_launcher_background">#1B2A3A</color>
 </resources>

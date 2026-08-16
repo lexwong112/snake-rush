@@ -10,6 +10,7 @@ multiple AI sessions each complete one phase and hand off a prompt to the next.
 | Language    | Kotlin                              |
 | UI          | Single custom `View` (Canvas 2D)    |
 | Game engine | Pure Kotlin, zero Android deps      |
+| Persistence | DataStore Preferences                |
 | Build       | Gradle (Kotlin DSL) + AGP 8.5.2     |
 | Min / Target| API 26 / API 35                     |
 
@@ -27,8 +28,10 @@ multiple AI sessions each complete one phase and hand off a prompt to the next.
 
 ```
 app/src/main/java/com/snakerush/
-├── MainActivity.kt      # thin host activity: HUD wiring, D-pad, lifecycle
+├── MainActivity.kt      # thin host activity: HUD, overlays, D-pad, lifecycle
+├── BestScoreStore.kt    # DataStore-backed best-score persistence
 ├── game/                # pure-Kotlin engine + logic (JVM-testable)
+│   ├── Difficulty.kt    # easy / normal / hard speed presets
 │   ├── Direction.kt     # 4-way movement enum
 │   ├── GameState.kt     # MENU / PLAYING / PAUSED / GAME_OVER
 │   ├── GridPoint.kt     # immutable board cell
@@ -49,13 +52,20 @@ app/src/test/java/com/snakerush/game/
   launcher icon, pure-Kotlin `SnakeGame` engine with unit tests, minimal
   static renderer so the app launches. **Build verified:** 11/11 engine unit
   tests pass and `assembleDebug` produces `app-debug.apk`.
-- **Phase 2 ✅ — Game loop & input (this commit).** Choreographer-driven
-  fixed-tick loop with a time accumulator, swipe gestures + on-screen D-pad
-  (both mapped to `setDirection`), score/best-score HUD, first-swipe start
-  and tap-to-pause/resume. **Build verified:** 28/28 JVM unit tests pass and
+- **Phase 2 ✅ — Game loop & input.** Choreographer-driven fixed-tick loop
+  with a time accumulator, swipe gestures + on-screen D-pad (both mapped to
+  `setDirection`), score/best-score HUD, first-swipe start and
+  tap-to-pause/resume. **Build verified:** 28/28 JVM unit tests pass and
   `assembleDebug` produces `app-debug.apk`.
-- **Phase 3 — Game states & persistence.** Menu / pause / game-over overlays,
-  best-score storage (DataStore), difficulty settings.
+- **Phase 3 ✅ — Game states & persistence (this commit).** Full-screen
+  menu / pause / game-over overlays in lockstep with the engine state
+  (`GameView.onStateChanged`), best score persisted with DataStore
+  (`BestScoreStore`), and an easy / normal / hard difficulty selector that
+  injects the speed curve into the engine via a `SnakeGame` constructor
+  parameter. The Phase 2 GAME_OVER tap-to-reset shortcut and the on-board
+  "Swipe to start" hint were removed (the overlays own those flows now).
+  **Build verified:** 32/32 JVM unit tests pass and `assembleDebug` produces
+  `app-debug.apk`.
 - **Phase 4 — Polish & QA.** Sound, animations, edge-case unit tests,
   GitHub Actions CI build, release signing.
 

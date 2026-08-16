@@ -9,15 +9,19 @@ reverse-engineer them.
 ```
 ┌─────────────── Android UI layer ───────────────┐
 │ MainActivity → GameView (custom View)          │
-│   · Choreographer tick loop        (phase 2)   │
-│   · onTouchEvent swipe / D-pad     (phase 2)   │
-│   · Canvas 2D rendering            (phase 1: static) │
+│   · Choreographer tick loop          (phase 2) │
+│   · onTouchEvent swipe / D-pad       (phase 2) │
+│   · Canvas 2D rendering              (phase 1) │
+│   · onStateChanged → overlay sync    (phase 3) │
+│   · DataStore best score + difficulty (phase 3)│
+│ Overlays: menu / pause / game-over (phase 3)  │
 └──────────────────────┬─────────────────────────┘
                        │ drives
 ┌──────────────────────▼─────────────────────────┐
 │ SnakeGame  (pure Kotlin, no Android imports)   │
 │   · board geometry, snake, food, score, state  │
 │   · setDirection(dir) + update() per tick      │
+│   · difficulty: tick curve config (phase 3)    │
 └────────────────────────────────────────────────┘
 ```
 
@@ -32,7 +36,10 @@ into `com.snakerush.game`.**
   `x` right, `y` down. Defaults: `18 × 24`.
 - Snake stored **head-first** in `ArrayDeque<GridPoint>`; `head = first`,
   tail = `last`.
-- `tickIntervalMillis` shrinks with score (`300ms − 6ms/point`, floor `90ms`).
+- `tickIntervalMillis` shrinks with score along the chosen `Difficulty`
+  curve: `base − score × speedUp`, floored at `min`. `NORMAL` = the original
+  formula (`300ms − 6ms/point`, floor `90ms`), `EASY` starts slower (360ms,
+  −4/point, floor 130ms), `HARD` faster (250ms, −8/point, floor 80ms).
 
 ## Key rules (engine contract)
 
@@ -53,17 +60,35 @@ into `com.snakerush.game`.**
 
 ## Phase-specific contracts
 
-- **Phase 2 ✅ — Game loop & input (this commit).** `GameView` runs a
-  `Choreographer`-driven loop that redraws every frame and steps the engine
-  with a `TickAccumulator` (only `update()` when `elapsed ≥ tickIntervalMillis`).
-  Input: swipe on `GameView` and an on-screen D-pad in `activity_main.xml`,
-  both routed through `GameView.pressDirection(dir)`. First press in `MENU`
-  calls `game.start()` (and queues the press itself); a tap toggles
-  pause/resume via `GameView.togglePause()`. Score `TextViews` are wired in
-  `MainActivity` (best score kept in memory; persistence is Phase 3).
-- **Phase 3:** add overlay layouts in `activity_main.xml`'s root `FrameLayout`;
-  persist best score (e.g. DataStore); replace the GAME_OVER tap-to-reset
-  convenience in `GameView.togglePause()` with a proper game-over overlay.
+- **Phase 2 ✅ — Game loop & input.** `GameView` runs a `Choreographer`-driven
+  loop that redraws every frame and steps the engine with a `TickAccumulator`
+  (only `update()` when `elapsed ≥ tickIntervalMillis`). Input: swipe on
+  `GameView` and an on-screen D-pad in `activity_main.xml`, both routed through
+  `GameView.pressDirection(dir)`. A tap toggles pause/resume via
+  `GameView.togglePause()`. Score `TextViews` are wired in `MainActivity`.
+- **Phase 3 ✅ — Game states & persistence (this commit).**
+  - Overlays: `activity_main.xml`'s root `FrameLayout` has three full-screen,
+    semi-transparent, `clickable` overlays — menu / pause / game-over. Exactly
+    one is visible at a time, driven by `GameView.onStateChanged` →
+    `MainActivity.syncOverlays(state)`. While visible an overlay covers the
+    board, HUD and D-pad, so it owns all touch input (the `GameView` and D-pad
+    underneath are inert). The D-pad is additionally set `GONE` outside
+    `PLAYING`.
+  - Overlay buttons: menu `Start` → `GameView.startGame()`; pause `Resume` →
+    `resumeGame()`, `Restart` → `restartGame(difficulty)`, `Menu` →
+    `newGame(difficulty)`; game-over `Restart`/`Menu` likewise. The Phase 2
+    `GAME_OVER → reset()` shortcut in `togglePause()` was **removed** and the
+    on-board "Swipe to start" hint was dropped (the menu overlay replaces it).
+    `pressDirection` keeps its `MENU → start()` branch as an unreachable-in-
+    practice safety net.
+  - Persistence: `BestScoreStore` (DataStore Preferences, file
+    `snake_rush_prefs`) stores the all-time best as a monotonic write
+    (`recordScore` only increases). `MainActivity` seeds its in-memory
+    `bestScore` from the store's `Flow` and writes on every score change.
+  - Difficulty: `Difficulty` enum (easy/normal/hard) is a new `SnakeGame`
+    constructor parameter (default `NORMAL`, preserving the original tick
+    formula and all prior call sites). `GameView.newGame(difficulty)` /
+    `restartGame(difficulty)` rebuild the engine with the chosen curve.
 - **Testing:** `internal` members (`placeFoodAt`, `loadStateForTesting`) exist
   only to build deterministic engine scenarios — keep them `internal`, don't
   expose them in public API.
@@ -86,31 +111,75 @@ into `com.snakerush.game`.**
   (48px)` → `None`; ≥ 48px → `Swipe` on the dominant axis. These are
   constructor defaults, overridable in tests.
 - **Input mapping.** Swipe and D-pad both end at `pressDirection(dir)`:
-  `MENU → start()+setDirection`, `PLAYING → setDirection`, else no-op. Tap
+  `MENU → start()+setDirection` (kept as a safety net; the menu overlay
+  normally owns that transition), `PLAYING → setDirection`, else no-op. Tap
   (ACTION_UP without travel) calls `togglePause()`: `PLAYING → pause()`,
-  `PAUSED → resume()`, `GAME_OVER → reset()` (throwaway until Phase 3 adds a
-  real overlay). `onDraw` only reads engine state — mutations happen in the
+  `PAUSED → resume()`, MENU/GAME_OVER are no-ops (overlays own those flows
+  since Phase 3). `onDraw` only reads engine state — mutations happen in the
   frame callback only.
 - **HUD.** `GameView.onScoreChanged(score)` fires after a scoring tick;
-  `MainActivity` keeps the in-memory `bestScore` and formats both `TextViews`
-  via `strings.xml` format args. Note: `android:text="@string/score_label"`
-  would render the raw `%1$d` literal, so `MainActivity` sets initial text in
-  code.
-- **D-pad layout.** Root stays a `FrameLayout` (Phase 3 overlays rely on it).
+  `MainActivity` formats both `TextViews` via `strings.xml` format args. Note:
+  `android:text="@string/score_label"` would render the raw `%1$d` literal,
+  so `MainActivity` sets initial text in code. Since Phase 3, `bestScore` is
+  backed by DataStore (see Phase 3 decisions).
+- **D-pad layout.** Root stays a `FrameLayout` (overlays rely on it).
   The D-pad overlays the bottom of the screen; `GameView.onSizeChanged`
   subtracts `R.dimen.board_bottom_reserve` (128dp) from the available height
   so the board never hides under the buttons — keep that dimen in sync with
-  the D-pad's actual height in `activity_main.xml`.
+  the D-pad's actual height in `activity_main.xml`. Since Phase 3 the D-pad
+  is `GONE` whenever an overlay is shown (not `PLAYING`).
+
+## Phase 3 decisions (relay notes)
+
+- **Overlay state sync.** State transitions originate in the engine but are
+  *applied* from three places in `GameView`: the frame callback (`advance()`
+  sees `GAME_OVER` from `update()`), the tap handler (`togglePause()`), and
+  the round-lifecycle methods (`startGame`/`resumeGame`/`newGame`/
+  `restartGame`/`pressDirection`). All funnel through `syncState()`, which
+  fires `onStateChanged` once per actual transition; `MainActivity.syncOverlays`
+  is the single place that maps state → visibility. `newGame()` always
+  notifies (even MENU→MENU) so the menu's best-score label and HUD refresh
+  when difficulty changes.
+- **Overlay touch ownership.** Each overlay root is a full-screen
+  `FrameLayout` with `background=overlay_bg` (≈90% opaque), `clickable=true`
+  and `focusable=true`. `View.GONE` overlays never participate in touch
+  dispatch, so there is zero interference during `PLAYING`; while visible, an
+  overlay consumes everything except its own buttons. The score HUD sits
+  *under* the overlays and is intentionally hidden while they show.
+- **DataStore.** `BestScoreStore` is a tiny wrapper over DataStore Preferences
+  (`snake_rush_prefs`, top-level `preferencesDataStore` delegate keyed on
+  `Context`). `bestScore: Flow<Int>` feeds the HUD reactively;
+  `recordScore(score)` is a monotonic upsert, so racing writes can only raise
+  the stored value. `MainActivity` runs collection/writes on a manually-owned
+  `uiScope` (`SupervisorJob` + `Dispatchers.Main.immediate`) cancelled in
+  `onDestroy` — the activity extends plain `Activity`, so there is no
+  `lifecycleScope` (adding `ComponentActivity`/lifecycle-runtime would be the
+  alternative; not needed for one preference).
+- **Difficulty injection.** `Difficulty` lives in `.game` and is a constructor
+  parameter of `SnakeGame` (default `NORMAL`), so `SnakeGame()` keeps its
+  documented tick formula and all Phase 1/2 tests still hold. The `NORMAL`
+  entry references the companion constants (`BASE_TICK_MILLIS` etc.) — they
+  are `const val`, inlined at compile time, so there is no class-init cycle.
+  Changing difficulty builds a fresh engine via `GameView.newGame` /
+  `restartGame` (the engine's `difficulty` is immutable per round). Unit tests
+  assert `NORMAL` == baseline, ordering (easy < normal < hard in speed), and
+  that every difficulty respects its own floor.
+- **New dependencies** (Phase 3): `androidx.datastore:datastore-preferences`
+  (1.1.1) and `org.jetbrains.kotlinx:kotlinx-coroutines-android` (1.7.3, for
+  `Dispatchers.Main`). Everything else stays dependency-free. The
+  `libdatastore_shared_counter.so` strip warning during packaging is benign.
 
 ## Conventions
 
 - Package root `com.snakerush`; engine in `.game`, UI in `.ui`.
 - Pure, JVM-testable logic goes in `.game` even when the UI layer consumes it
-  (`TickAccumulator`, `SwipeInterpreter`). Android-only glue stays in `.ui` /
-  `MainActivity`.
+  (`TickAccumulator`, `SwipeInterpreter`, `Difficulty`). Android-only glue
+  stays in `.ui` / `MainActivity` / `BestScoreStore` (DataStore is an Android
+  API).
 - Version catalog not used yet; plugin versions live in root `build.gradle.kts`.
 - Colors live both in `res/values/colors.xml` and as constants in `GameView`
-  (hot draw path avoids resource lookups).
+  (hot draw path avoids resource lookups). Overlay chrome (buttons, texts)
+  uses resources, not draw-path constants.
 
 ## Environment quirks (arm64 sandbox)
 

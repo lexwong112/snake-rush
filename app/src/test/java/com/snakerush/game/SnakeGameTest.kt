@@ -139,4 +139,44 @@ class SnakeGameTest {
         assertTrue(game.tickIntervalMillis < SnakeGame.BASE_TICK_MILLIS)
         assertTrue(game.tickIntervalMillis >= SnakeGame.MIN_TICK_MILLIS)
     }
+
+    @Test
+    fun defaultDifficultyIsNormalAndMatchesBaselineFormula() {
+        val game = SnakeGame()
+        assertEquals(Difficulty.NORMAL, game.difficulty)
+        assertEquals(SnakeGame.BASE_TICK_MILLIS, game.tickIntervalMillis)
+    }
+
+    @Test
+    fun hardDifficultyStartsFasterThanNormal() {
+        val normal = SnakeGame(difficulty = Difficulty.NORMAL)
+        val hard = SnakeGame(difficulty = Difficulty.HARD)
+        assertTrue(hard.tickIntervalMillis < normal.tickIntervalMillis)
+    }
+
+    @Test
+    fun easyDifficultyStartsSlowerThanNormal() {
+        val normal = SnakeGame(difficulty = Difficulty.NORMAL)
+        val easy = SnakeGame(difficulty = Difficulty.EASY)
+        assertTrue(easy.tickIntervalMillis > normal.tickIntervalMillis)
+    }
+
+    @Test
+    fun eachDifficultyRespectsItsOwnSpeedFloor() {
+        for (difficulty in Difficulty.entries) {
+            // Wide board so the snake never reaches a wall while feeding.
+            val game = SnakeGame(60, 60, difficulty)
+            game.start()
+            repeat(25) {
+                game.placeFoodAt(game.head.translated(Direction.RIGHT))
+                game.update()
+            }
+            assertTrue(game.score > 0)
+            assertTrue(
+                "expected tick >= ${difficulty.minTickMillis} for $difficulty, was ${game.tickIntervalMillis}",
+                game.tickIntervalMillis >= difficulty.minTickMillis
+            )
+            assertTrue(game.tickIntervalMillis <= difficulty.baseTickMillis)
+        }
+    }
 }

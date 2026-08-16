@@ -3,4 +3,20 @@
     <string name="app_name">Snake Rush</string>
     <string name="score_label">Score: %1$d</string>
     <string name="best_label">Best: %1$d</string>
+
+    <!-- Overlay screens (menu / pause / game over) -->
+    <string name="menu_title">Snake Rush</string>
+    <string name="menu_best_label">最高分：%1$d</string>
+    <string name="menu_difficulty_label">难度</string>
+    <string name="difficulty_easy">简单</string>
+    <string name="difficulty_normal">普通</string>
+    <string name="difficulty_hard">困难</string>
+    <string name="action_start">开始</string>
+    <string name="pause_title">已暂停</string>
+    <string name="action_resume">继续</string>
+    <string name="game_over_title">游戏结束</string>
+    <string name="overlay_score_label">本局得分：%1$d</string>
+    <string name="overlay_best_label">最高分：%1$d</string>
+    <string name="action_restart">重新开始</string>
+    <string name="action_menu">主菜单</string>
 </resources>
