@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Screen space reserved at the bottom of the GameView for the on-screen
+        D-pad overlay. Kept here so the board sizing (GameView) and the D-pad
+        layout (activity_main.xml) stay in sync from one source of truth.
+    -->
+    <dimen name="board_bottom_reserve">128dp</dimen>
+</resources>
